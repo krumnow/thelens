@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Lens — API Audit</title>
+<style>
+body{background:#0B0F1A;color:#E2E8F0;font-family:'Courier New',monospace;font-size:12px;padding:16px;line-height:1.6;}
+h2{color:#38BDF8;font-size:14px;margin:16px 0 8px;border-bottom:1px solid #1E2D40;padding-bottom:4px;}
+.ok{color:#10B981;} .fail{color:#EF4444;} .warn{color:#F59E0B;}
+pre{background:#111827;padding:10px;border-radius:6px;overflow-x:auto;border:1px solid #1E2D40;white-space:pre-wrap;word-break:break-all;font-size:11px;}
+</style>
+</head>
+<body>
+<h1 style="color:#38BDF8">THE LENS — FULL API AUDIT</h1>
+<div id="out">Running audit...</div>
+<script>
+const out=document.getElementById('out'),B='https://statsapi.mlb.com/api/v1',s=2026,pitcher=543037,batter=592450;
+function h2(t){return'<h2>'+t+'</h2>';}
+function ok(t){return'<span class="ok">✓ '+t+'</span><br>';}
+function fail(t){return'<span class="fail">✗ '+t+'</span><br>';}
+function warn(t){return'<span class="warn">⚠ '+t+'</span><br>';}
+async function run(){
+let html='';
+html+=h2('PITCHER SEASON STATS');
+try{const r=await fetch(B+'/people/'+pitcher+'/stats?stats=season&group=pitching&season='+s+'&sportId=1');const d=await r.json();const st=d.stats?.[0]?.splits?.[0]?.stat||{};const keys=Object.keys(st);html+='<pre>'+keys.join(', ')+'</pre>';['era','whip','strikeoutsPer9Inn','walksPer9Inn','homeRunsPer9','hitsPer9Inn','wins','losses','inningsPitched','avg','obp','slg','babip','groundOutsToAirouts','pitchesPerInning','strikePercentage','gamesStarted','battersFaced'].forEach(k=>{html+=(keys.includes(k)?ok(k+'='+st[k]):fail(k+' MISSING'));});}catch(e){html+=fail(e.message);}
+html+=h2('PITCHER SABERMETRICS');
+try{const r=await fetch(B+'/people/'+pitcher+'/stats?stats=sabermetrics&group=pitching&season='+s+'&sportId=1');const d=await r.json();const st=d.stats?.[0]?.splits?.[0]?.stat||{};const keys=Object.keys(st);html+='<pre>'+keys.join(', ')+'</pre>';['kPercent','bbPercent','gbPercent','fbPercent','fip','xfip','siera','strikeoutPercent','walkPercent','groundBallPercent','flyBallPercent','FIP','xFIP','SIERA'].forEach(k=>{html+=(keys.includes(k)?ok(k+'='+st[k]):warn(k));});}catch(e){html+=fail(e.message);}
+html+=h2('BATTER SEASON STATS');
+try{const r=await fetch(B+'/people/'+batter+'/stats?stats=season&group=hitting&season='+s+'&sportId=1');const d=await r.json();const st=d.stats?.[0]?.splits?.[0]?.stat||{};const keys=Object.keys(st);html+='<pre>'+keys.join(', ')+'</pre>';['avg','obp','slg','ops','homeRuns','rbi','stolenBases','caughtStealing','stolenBasePercentage','hits','strikeOuts','baseOnBalls','atBats','gamesPlayed','babip'].forEach(k=>{html+=(keys.includes(k)?ok(k+'='+st[k]):fail(k));});}catch(e){html+=fail(e.message);}
+html+=h2('BATTER SABERMETRICS');
+try{const r=await fetch(B+'/people/'+batter+'/stats?stats=sabermetrics&group=hitting&season='+s+'&sportId=1');const d=await r.json();const st=d.stats?.[0]?.splits?.[0]?.stat||{};const keys=Object.keys(st);html+='<pre>'+keys.join(', ')+'</pre>';['gbPercent','fbPercent','ldPercent','popupPercent','pullPercent','centerPercent','oppoPercent','hardHitPercent','barrelPercent','avgExitVelocity','avgLaunchAngle','kPercent','bbPercent','pitchesPerPlateAppearance','iso','babip','woba','wRCPlus'].forEach(k=>{html+=(keys.includes(k)?ok(k+'='+st[k]):warn(k));});}catch(e){html+=fail(e.message);}
+html+=h2('SITUATION CODES');
+for(const c of['vl','vr','h','a','risp','d','n','ac','bc','ah','bh']){try{const r=await fetch(B+'/people/'+batter+'/stats?stats=statSplits&group=hitting&season='+s+'&sportId=1&sitCodes='+c);const d=await r.json();const st=d.stats?.[0]?.splits?.[0]?.stat;html+=(st?ok(c+': AVG='+st.avg+' OPS='+st.ops+' AB='+st.atBats):fail(c+': no data'));}catch(e){html+=fail(c+': error');}}
+html+=h2('BY MONTH');
+try{const r=await fetch(B+'/people/'+batter+'/stats?stats=byMonth&group=hitting&season='+s+'&sportId=1');const d=await r.json();const splits=d.stats?.[0]?.splits||[];html+=ok(splits.length+' months');splits.forEach(sp=>{html+='  <b>'+(sp.month||sp.split?.description||sp.split?.code||'?')+'</b> AVG:'+sp.stat?.avg+' HR:'+sp.stat?.homeRuns+'<br>';});if(splits[0])html+='<pre>Split keys: '+Object.keys(splits[0]).join(', ')+'</pre>';}catch(e){html+=fail(e.message);}
+html+=h2('SB LEADERS');
+try{const r=await fetch(B+'/stats/leaders?leaderCategories=stolenBases&season='+s+'&sportId=1&limit=3');const d=await r.json();const leaders=d.leagueLeaders?.[0]?.leaders||[];html+=ok(leaders.length+' leaders');leaders.forEach(l=>{html+='  '+l.person?.fullName+' SB:'+l.value+' team:'+l.team?.name+'('+l.team?.id+')<br>';});if(leaders[0]){html+='<pre>Leader keys: '+Object.keys(leaders[0]).join(', ')+'</pre>';}}catch(e){html+=fail(e.message);}
+html+=h2('CATCHING STATS');
+try{const r=await fetch(B+'/people/669257/stats?stats=season&group=catching&season='+s+'&sportId=1');const d=await r.json();const st=d.stats?.[0]?.splits?.[0]?.stat||{};const keys=Object.keys(st);if(keys.length){html+='<pre>'+keys.join(', ')+'</pre>';}else{html+=warn('No catching group — trying fielding');const r2=await fetch(B+'/people/669257/stats?stats=season&group=fielding&season='+s+'&sportId=1');const d2=await r2.json();const c=d2.stats?.[0]?.splits?.find(sp=>sp.position?.abbreviation==='C');if(c){html+='<pre>Fielding C keys: '+Object.keys(c.stat||{}).join(', ')+'</pre>';['caughtStealing','stolenBases','stolenBasePercentage','passedBall'].forEach(k=>{html+=(Object.keys(c.stat||{}).includes(k)?ok(k+'='+c.stat[k]):warn(k));});}else html+=fail('No catcher in fielding');}}catch(e){html+=fail(e.message);}
+html+=h2('PITCH ARSENAL');
+try{const r=await fetch(B+'/people/'+pitcher+'/stats?stats=pitchArsenal&group=pitching&season='+s+'&sportId=1');const d=await r.json();const sp=d.stats?.[0]?.splits?.[0]||{};html+='<pre>Split keys: '+Object.keys(sp).join(', ')+'</pre>';html+='<pre>Stat keys: '+Object.keys(sp.stat||{}).join(', ')+'</pre>';html+='usage='+sp.stat?.usage+' type='+(typeof sp.stat?.usage)+'<br>';html+='speed='+sp.stat?.averageSpeed+'<br>';html+='code='+(sp.details?.type?.code||sp.stat?.type?.code)+'<br>';}catch(e){html+=fail(e.message);}
+html+=h2('DONE');
+out.innerHTML=html;}
+run();
+</script>
+</body>
+</html>
