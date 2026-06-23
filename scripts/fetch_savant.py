@@ -208,26 +208,64 @@ def main():
     except Exception as e:
         print(f'  pop-time error: {e}'); errors.append('pop-time')
 
-    # ── 8. PITCH TEMPO (savant-extras) ──
+    # ── 8. PITCH TEMPO — direct URL with savant-extras fallback ──
     try:
         print('\n[8/11] Pitch tempo...')
-        from savant_extras import pitch_tempo
-        df = pitch_tempo(SEASON)
+        import urllib.request, csv as csvmod
+        from io import StringIO
+
         result = {}
-        for _, row in df.iterrows():
-            pid = int(row.get('pitcher_id') or row.get('player_id') or 0)
-            if not pid: continue
-            result[pid] = {
-                'player_name':      row.get('pitcher_name') or row.get('player_name',''),
-                'team':             row.get('team_name',''),
-                # Time from receiving ball to pitch release (seconds)
-                'pace_runner_on':   safe(row.get('pace_per_pitch_rascore') or row.get('time_to_plate_runner') or row.get('tempo_runner_on')),
-                'pace_empty':       safe(row.get('pace_per_pitch') or row.get('time_to_plate_empty') or row.get('tempo_empty')),
-                'pickoffs':         safe(row.get('pickoffs') or row.get('pickoff_attempts')),
-            }
-        write_json('savant-pitch-tempo.json', result)
-        write_json('savant-pitcher-sb.json', result)
-        files_updated += ['savant-pitch-tempo.json','savant-pitcher-sb.json']
+
+        # Try direct Savant URL first
+        direct_url = f'https://baseballsavant.mlb.com/leaderboard/pitch-tempo?year={SEASON}&team=&min=100&hand=&csv=true'
+        hdrs = {'User-Agent': 'Mozilla/5.0 (compatible; TheLens/1.0)', 'Accept': 'text/csv,*/*'}
+        try:
+            req = urllib.request.Request(direct_url, headers=hdrs)
+            with urllib.request.urlopen(req, timeout=30) as r:
+                text = r.read().decode('utf-8')
+            if text and len(text) > 200:
+                reader = csvmod.DictReader(StringIO(text))
+                for row in reader:
+                    pid = int(row.get('pitcher_id') or row.get('player_id') or 0)
+                    if not pid: continue
+                    result[pid] = {
+                        'player_name':    row.get('pitcher_name') or row.get('player_name',''),
+                        'team':           row.get('team_name',''),
+                        'pace_runner_on': safe(row.get('pace_per_pitch_rascore') or row.get('pace_rascore') or row.get('time_to_plate_runner') or row.get('pace_runner')),
+                        'pace_empty':     safe(row.get('pace_per_pitch') or row.get('time_to_plate') or row.get('pace')),
+                        'pickoffs':       safe(row.get('pickoffs') or row.get('pickoff_attempts')),
+                    }
+                print(f'  Direct URL: {len(result)} pitchers')
+        except Exception as e2:
+            print(f'  Direct URL failed: {e2}')
+
+        # Fallback: savant-extras
+        if not result:
+            try:
+                from savant_extras import pitch_tempo
+                df2 = pitch_tempo(SEASON)
+                if not df2.empty:
+                    for _, row in df2.iterrows():
+                        pid = int(row.get('pitcher_id') or row.get('player_id') or 0)
+                        if not pid: continue
+                        result[pid] = {
+                            'player_name':    row.get('pitcher_name') or row.get('player_name',''),
+                            'team':           row.get('team_name',''),
+                            'pace_runner_on': safe(row.get('pace_per_pitch_rascore') or row.get('time_to_plate_runner')),
+                            'pace_empty':     safe(row.get('pace_per_pitch') or row.get('time_to_plate_empty')),
+                            'pickoffs':       safe(row.get('pickoffs')),
+                        }
+                    print(f'  savant-extras: {len(result)} pitchers')
+            except Exception as e3:
+                print(f'  savant-extras fallback failed: {e3}')
+
+        if result:
+            write_json('savant-pitch-tempo.json', result)
+            write_json('savant-pitcher-sb.json', result)
+            files_updated += ['savant-pitch-tempo.json','savant-pitcher-sb.json']
+        else:
+            print('  pitch-tempo: no data from any source')
+            errors.append('pitch-tempo')
     except Exception as e:
         print(f'  pitch-tempo error: {e}'); errors.append('pitch-tempo')
 
