@@ -184,29 +184,80 @@ def main():
     except Exception as e:
         print(f'  hitter-pct error: {e}'); errors.append('hitter-pct')
 
-    # ── 7. CATCHER POP TIME (savant-extras) ──
+    # ── 7. CATCHER POP TIME — direct Savant URL ──
     try:
         print('\n[7/11] Catcher pop time...')
-        from savant_extras import catcher_throwing
-        df = catcher_throwing(SEASON)
+        import urllib.request, csv as csvmod
+        from io import StringIO
+
         result = {}
-        for _, row in df.iterrows():
-            pid = int(row.get('catcher_id') or row.get('player_id') or 0)
-            if not pid: continue
-            result[pid] = {
-                'player_name':    row.get('catcher_name') or row.get('player_name',''),
-                'team':           row.get('team_name',''),
-                'pop_2b':         safe(row.get('pop_2b_sba_avgpoptime') or row.get('avg_pop_2b')),
-                'pop_3b':         safe(row.get('pop_3b_sba_avgpoptime') or row.get('avg_pop_3b')),
-                'exchange_2b':    safe(row.get('exchange_2b_3b_sba') or row.get('avg_exchange')),
-                'throw_speed_2b': safe(row.get('maxeff_arm_2b_3b_sba') or row.get('avg_throw_speed')),
-                'cs_pct':         safe(row.get('cs_pct') or row.get('caught_stealing_pct')),
-                'att_total':      safe(row.get('sba') or row.get('steal_attempts')),
-            }
-        write_json('savant-pop-time.json', result)
-        files_updated.append('savant-pop-time.json')
+        hdrs = {'User-Agent': 'Mozilla/5.0 (compatible; TheLens/1.0)', 'Accept': 'text/csv,*/*'}
+
+        # Direct Savant pop time leaderboard
+        pop_url = f'https://baseballsavant.mlb.com/leaderboard/poptime?year={SEASON}&team=&min2b=5&min3b=0&csv=true'
+        try:
+            req = urllib.request.Request(pop_url, headers=hdrs)
+            with urllib.request.urlopen(req, timeout=30) as r:
+                text = r.read().decode('utf-8')
+            if text and len(text) > 200:
+                reader = csvmod.DictReader(StringIO(text))
+                rows = list(reader)
+                print(f'  Got {len(rows)} rows, columns: {list(rows[0].keys()) if rows else []}')
+                for row in rows:
+                    pid = int(row.get('catcher_id') or row.get('player_id') or 0)
+                    if not pid: continue
+                    result[pid] = {
+                        'player_name':    row.get('catcher_name') or row.get('player_name',''),
+                        'team':           row.get('team_name','') or row.get('team',''),
+                        'pop_2b':         safe(row.get('pop_2b_sba_avgpoptime') or row.get('avg_pop_2b_sba') or row.get('pop2b_avg') or row.get('pop_2b')),
+                        'pop_3b':         safe(row.get('pop_3b_sba_avgpoptime') or row.get('avg_pop_3b_sba') or row.get('pop_3b')),
+                        'exchange_2b':    safe(row.get('exchange_2b_3b_sba') or row.get('exchange_2b')),
+                        'throw_speed_2b': safe(row.get('maxeff_arm_2b_3b_sba') or row.get('arm_strength_2b')),
+                        'cs_pct':         safe(row.get('cs_pct') or row.get('caught_stealing_pct')),
+                        'att_total':      safe(row.get('n_cs_att_2b_3b') or row.get('sba') or row.get('att_total')),
+                    }
+                print(f'  Direct URL: {len(result)} catchers')
+                if result:
+                    # Log sample to verify fields
+                    sample_pid = list(result.keys())[0]
+                    print(f'  Sample: {result[sample_pid]}')
+        except Exception as e2:
+            print(f'  Direct URL failed: {e2}')
+
+        # Fallback: savant-extras
+        if not result:
+            try:
+                from savant_extras import catcher_throwing
+                df = catcher_throwing(SEASON)
+                print(f'  savant-extras cols: {list(df.columns) if not df.empty else "empty"}')
+                if not df.empty:
+                    for _, row in df.iterrows():
+                        pid = int(row.get('catcher_id') or row.get('player_id') or 0)
+                        if not pid: continue
+                        # Try every possible column name
+                        pop = None
+                        for col in ['pop_2b_sba_avgpoptime','avg_pop_2b_sba','pop2b_avg','pop_2b','avg_pop_time']:
+                            v = safe(row.get(col))
+                            if v is not None: pop = v; break
+                        result[pid] = {
+                            'player_name': row.get('catcher_name') or row.get('player_name',''),
+                            'team': str(row.get('team_name','') or row.get('team','')),
+                            'pop_2b': pop,
+                            'cs_pct': safe(row.get('cs_pct') or row.get('caught_stealing_pct')),
+                        }
+                    print(f'  savant-extras: {len(result)} catchers')
+            except Exception as e3:
+                print(f'  savant-extras fallback: {e3}')
+
+        if result:
+            write_json('savant-pop-time.json', result)
+            files_updated.append('savant-pop-time.json')
+        else:
+            print('  pop-time: no data from any source')
+            errors.append('pop-time')
     except Exception as e:
         print(f'  pop-time error: {e}'); errors.append('pop-time')
+
 
     # ── 8. PITCH TEMPO — direct URL with savant-extras fallback ──
     try:
